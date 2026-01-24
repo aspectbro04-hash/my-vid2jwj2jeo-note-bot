@@ -15,7 +15,7 @@ import threading
 # ========= SOZLAMALAR (O'ZGARTIRING) =========
 API_TOKEN = "8426868102:AAFYMpizU_BI6mvLe-VES1A9pjhq45fNoEo" # Bot tokeni
 ADMIN_ID = 5153414405  # Asosiy admin ID
-LOG_GROUP_ID = -1005186355139  # ❗ BU YERGA MAXFIY GURUH ID RAQAMINI YOZING
+LOG_GROUP_ID = 5153414405  # ❗ BU YERGA MAXFIY GURUH ID RAQAMINI YOZING
 
 static_ffmpeg.add_paths()
 bot = telebot.TeleBot(API_TOKEN, parse_mode="HTML")

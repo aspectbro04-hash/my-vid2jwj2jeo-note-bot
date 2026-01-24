@@ -1,5 +1,6 @@
 # =========================================
-#   TELEGRAM DUMALOQ VIDEO BOT (FULL PRO)
+# TELEGRAM VIDEO NOTE BOT — FULL PRO
+# Majburiy obuna + Reklama + Statistika + Log group
 # =========================================
 
 import telebot
@@ -11,12 +12,12 @@ import static_ffmpeg
 from datetime import datetime
 
 # ========= SOZLAMALAR =========
-API_TOKEN = "8426868102:AAFYMpizU_BI6mvLe-VES1A9pjhq45fNoEo
+API_TOKEN = "8426868102:AAFYMpizU_BI6mvLe-VES1A9pjhq45fNoEo"
 ADMIN_ID = 5153414405
 LOG_GROUP_ID = -1005186355139  # maxsus guruh id
 
 static_ffmpeg.add_paths()
-bot = telebot.TeleBot(API_TOKEN)
+bot = telebot.TeleBot(API_TOKEN, parse_mode="HTML")
 
 # ========= DATABASE =========
 os.makedirs("data", exist_ok=True)
@@ -44,9 +45,16 @@ def init_db():
 # ========= USER SAVE =========
 def save_user(uid):
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
     with sqlite3.connect(DB_NAME) as conn:
-        conn.execute("INSERT OR IGNORE INTO users VALUES (?, ?, ?)", (uid, now, now))
-        conn.execute("UPDATE users SET last_active=? WHERE user_id=?", (now, uid))
+        conn.execute(
+            "INSERT OR IGNORE INTO users VALUES (?, ?, ?)",
+            (uid, now, now)
+        )
+        conn.execute(
+            "UPDATE users SET last_active=? WHERE user_id=?",
+            (now, uid)
+        )
         conn.commit()
 
 
@@ -80,6 +88,7 @@ def admin_keyboard():
 
 def subscription_keyboard(missing):
     kb = types.InlineKeyboardMarkup()
+
     for i, (_, url) in enumerate(missing, 1):
         kb.add(types.InlineKeyboardButton(f"{i}-kanalga a'zo bo'lish", url=url))
 
@@ -95,34 +104,39 @@ def auto_save(message):
     save_user(message.from_user.id)
 
 
-# ========= ADMIN =========
+# ========= ADMIN PANEL =========
 @bot.message_handler(func=lambda m: m.from_user.id == ADMIN_ID and m.text == "➕ Kanal qo'shish")
-def add_ch_start(message):
+def add_channel_start(message):
     msg = bot.send_message(ADMIN_ID, "Kanal ID yoki @username yubor:")
-    bot.register_next_step_handler(msg, add_ch_url)
+    bot.register_next_step_handler(msg, add_channel_url)
 
 
-def add_ch_url(message):
+def add_channel_url(message):
     ch_id = message.text.strip()
-    msg = bot.send_message(ADMIN_ID, "Endi kanal link yubor:")
-    bot.register_next_step_handler(msg, add_ch_final, ch_id)
+    msg = bot.send_message(ADMIN_ID, "Endi kanal linkini yubor:")
+    bot.register_next_step_handler(msg, add_channel_save, ch_id)
 
 
-def add_ch_final(message, ch_id):
+def add_channel_save(message, ch_id):
     with sqlite3.connect(DB_NAME) as conn:
-        conn.execute("INSERT OR REPLACE INTO channels VALUES (?, ?)", (ch_id, message.text.strip()))
+        conn.execute(
+            "INSERT OR REPLACE INTO channels VALUES (?, ?)",
+            (ch_id, message.text.strip())
+        )
+
     bot.send_message(ADMIN_ID, "✅ Kanal qo'shildi", reply_markup=admin_keyboard())
 
 
 @bot.message_handler(func=lambda m: m.from_user.id == ADMIN_ID and m.text == "🗑 Kanal o'chirish")
-def del_ch_start(message):
+def delete_channel_start(message):
     msg = bot.send_message(ADMIN_ID, "O'chirish uchun kanal ID yubor:")
-    bot.register_next_step_handler(msg, del_ch_final)
+    bot.register_next_step_handler(msg, delete_channel)
 
 
-def del_ch_final(message):
+def delete_channel(message):
     with sqlite3.connect(DB_NAME) as conn:
         conn.execute("DELETE FROM channels WHERE id=?", (message.text.strip(),))
+
     bot.send_message(ADMIN_ID, "🗑 O'chirildi", reply_markup=admin_keyboard())
 
 
@@ -130,12 +144,13 @@ def del_ch_final(message):
 def stats(message):
     with sqlite3.connect(DB_NAME) as conn:
         total = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+
     bot.send_message(ADMIN_ID, f"👥 Jami foydalanuvchi: {total}")
 
 
 @bot.message_handler(func=lambda m: m.from_user.id == ADMIN_ID and m.text == "📢 Reklama")
 def ads_start(message):
-    msg = bot.send_message(ADMIN_ID, "Reklama yubor:")
+    msg = bot.send_message(ADMIN_ID, "Reklama xabarini yubor:")
     bot.register_next_step_handler(msg, ads_send)
 
 
@@ -167,8 +182,11 @@ def start_cmd(message):
     missing = is_subscribed(uid)
 
     if missing:
-        bot.send_message(uid, "❗ Avval kanallarga a'zo bo'ling:",
-                         reply_markup=subscription_keyboard(missing))
+        bot.send_message(
+            uid,
+            "❗ Avval kanallarga a'zo bo'ling:",
+            reply_markup=subscription_keyboard(missing)
+        )
         return
 
     bot.send_message(uid, "🎥 Video yubor → dumaloq qilib beraman")
@@ -179,14 +197,16 @@ def check_subs(call):
     missing = is_subscribed(call.from_user.id)
 
     if not missing:
-        bot.edit_message_text("✅ Endi video yuborishingiz mumkin",
-                              call.message.chat.id,
-                              call.message.message_id)
+        bot.edit_message_text(
+            "✅ Endi video yuborishingiz mumkin",
+            call.message.chat.id,
+            call.message.message_id
+        )
     else:
         bot.answer_callback_query(call.id, "Hali obuna emassiz ❌", show_alert=True)
 
 
-# ========= VIDEO =========
+# ========= VIDEO PROCESS =========
 @bot.message_handler(content_types=["video"])
 def process_video(message):
     uid = message.from_user.id
@@ -210,8 +230,11 @@ def process_video(message):
         subprocess.run([
             "ffmpeg", "-y", "-i", in_file,
             "-vf", "scale=640:640:force_original_aspect_ratio=increase,crop=640:640",
+            "-c:v", "libx264",
+            "-preset", "ultrafast",
+            "-pix_fmt", "yuv420p",
             out_file
-        ])
+        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
         with open(out_file, "rb") as v:
             bot.send_video_note(uid, v)
@@ -221,6 +244,7 @@ def process_video(message):
 
     finally:
         bot.delete_message(uid, status.message_id)
+
         for f in [in_file, out_file]:
             if os.path.exists(f):
                 os.remove(f)
@@ -230,4 +254,4 @@ def process_video(message):
 if __name__ == "__main__":
     init_db()
     print("Bot ishga tushdi...")
-    bot.infinity_polling()
+    bot.infinity_polling(skip_pending=True)

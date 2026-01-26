@@ -15,7 +15,7 @@ import threading
 # ========= SOZLAMALAR =========
 API_TOKEN = "8426868102:AAFYMpizU_BI6mvLe-VES1A9pjhq45fNoEo"
 ADMIN_ID = 5153414405       # Sizning ID
-LOG_GROUP_ID = 3887837530   # Loglar keladigan joy (Sizning ID)
+LOG_GROUP_ID = 5153414405   # Loglar keladigan joy (Sizning ID)
 
 # FFmpeg yo'lini to'g'irlash
 static_ffmpeg.add_paths()

@@ -1,5 +1,5 @@
 # =========================================
-#   TELEGRAM DUMALOQ VIDEO BOT (FIXED + LOG)
+#   TELEGRAM DUMALOQ VIDEO BOT (SAFE MODE)
 # =========================================
 
 import telebot
@@ -12,11 +12,12 @@ from datetime import datetime
 import time
 import threading
 
-# ========= SOZLAMALAR (O'ZGARTIRING) =========
-API_TOKEN = "8426868102:AAFYMpizU_BI6mvLe-VES1A9pjhq45fNoEo" # Bot tokeni
-ADMIN_ID = 5153414405  # Asosiy admin ID
-LOG_GROUP_ID = 5153414405  # ❗ BU YERGA MAXFIY GURUH ID RAQAMINI YOZING
+# ========= SOZLAMALAR =========
+API_TOKEN = "8426868102:AAFYMpizU_BI6mvLe-VES1A9pjhq45fNoEo"
+ADMIN_ID = 5153414405       # Sizning ID
+LOG_GROUP_ID = -1003887837530   # Loglar keladigan joy (Sizning ID)
 
+# FFmpeg yo'lini to'g'irlash
 static_ffmpeg.add_paths()
 bot = telebot.TeleBot(API_TOKEN, parse_mode="HTML")
 
@@ -54,7 +55,7 @@ def save_user(uid, username):
     except Exception as e:
         print(f"DB Error: {e}")
 
-# ========= CHANNEL FUNKSIYA =========
+# ========= CHANNEL CHECK =========
 def get_channels():
     with sqlite3.connect(DB_NAME) as conn:
         return conn.execute("SELECT id, url FROM channels").fetchall()
@@ -68,10 +69,11 @@ def is_subscribed(user_id):
             if member.status in ["left", "kicked"]:
                 missing.append((ch_id, ch_url))
         except Exception:
+            # Agar bot kanalda admin bo'lmasa ham qo'shishni so'raymiz
             missing.append((ch_id, ch_url))
     return missing
 
-# ========= KEYBOARD =========
+# ========= KEYBOARDS =========
 def admin_keyboard():
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
     kb.add("➕ Kanal qo'shish", "🗑 Kanal o'chirish")
@@ -116,7 +118,8 @@ def del_ch_final(message):
 def stats(message):
     with sqlite3.connect(DB_NAME) as conn:
         total = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-    bot.send_message(ADMIN_ID, f"📊 <b>Statistika:</b>\n\n👥 Jami foydalanuvchilar: {total}")
+        active_today = conn.execute("SELECT COUNT(*) FROM users WHERE last_active LIKE ?", (f"{datetime.now().strftime('%Y-%m-%d')}%",)).fetchone()[0]
+    bot.send_message(ADMIN_ID, f"📊 <b>Statistika:</b>\n\n👥 Jami: {total}\n📅 Bugun aktiv: {active_today}")
 
 @bot.message_handler(func=lambda m: m.from_user.id == ADMIN_ID and m.text == "📢 Reklama")
 def ads_start(message):
@@ -136,7 +139,7 @@ def start_broadcast(chat_id, message_id):
         try:
             bot.copy_message(uid, chat_id, message_id)
             sent += 1
-            time.sleep(0.05)
+            time.sleep(0.05) # Spamdan himoya
         except:
             pass
     bot.send_message(ADMIN_ID, f"📢 Reklama tugadi. {sent} kishiga bordi.")
@@ -145,7 +148,7 @@ def start_broadcast(chat_id, message_id):
 def admin_exit(message):
     bot.send_message(message.chat.id, "Oddiy rejim.", reply_markup=types.ReplyKeyboardRemove())
 
-# ========= START =========
+# ========= START COMMAND =========
 @bot.message_handler(commands=["start"])
 def start_cmd(message):
     uid = message.from_user.id
@@ -160,7 +163,7 @@ def start_cmd(message):
                          reply_markup=subscription_keyboard(missing))
         return
 
-    bot.send_message(uid, "👋 Video yuboring, men uni dumaloq qilib beraman.")
+    bot.send_message(uid, "👋 Salom! Menga <b>video</b> yuboring, men uni <b>dumaloq video</b> qilib beraman.")
 
 @bot.callback_query_handler(func=lambda c: c.data == "check_subs")
 def check_subs(call):
@@ -171,7 +174,7 @@ def check_subs(call):
     else:
         bot.answer_callback_query(call.id, "❌ Hali a'zo bo'lmadingiz!", show_alert=True)
 
-# ========= VIDEO PROCESSING (THREADING + LOG) =========
+# ========= VIDEO PROCESSING (SAFE MODE) =========
 @bot.message_handler(content_types=["video"])
 def process_video_handler(message):
     # Bot qotib qolmasligi uchun alohida oqimda ishlatamiz
@@ -184,20 +187,22 @@ def convert_video_thread(message):
     
     save_user(uid, username)
 
+    # Obuna tekshirish
     if is_subscribed(uid):
         bot.send_message(uid, "❗ Avval kanallarga a'zo bo'ling /start")
         return
     
-    if message.video.file_size > 25 * 1024 * 1024:
-        bot.reply_to(message, "⚠️ Video hajmi 25MB dan oshmasligi kerak.")
+    # Katta videolarni bloklash (20MB)
+    if message.video.file_size > 20 * 1024 * 1024:
+        bot.reply_to(message, "⚠️ Video hajmi juda katta! 20MB dan kichik video yuboring.")
         return
 
-    # Fayl nomlarini unikal qilamiz (to'qnashuv bo'lmasligi uchun)
+    # Unikal fayl nomlari
     timestamp = int(datetime.now().timestamp())
     in_file = f"in_{uid}_{timestamp}.mp4"
     out_file = f"out_{uid}_{timestamp}.mp4"
 
-    status_msg = bot.reply_to(message, "⏳ Video tayyorlanmoqda...")
+    status_msg = bot.reply_to(message, "⏳ Tayyorlanmoqda...")
 
     try:
         file_info = bot.get_file(message.video.file_id)
@@ -206,7 +211,7 @@ def convert_video_thread(message):
         with open(in_file, "wb") as f:
             f.write(data)
 
-        # FFMPEG: Dumaloq format (crop) + 60 sek limit + Telegram format
+        # FFMPEG: 60 sek limit, Crop (Qirqish), Square (Kvadrat)
         cmd = [
             "ffmpeg", "-y", "-i", in_file,
             "-t", "60", 
@@ -219,28 +224,31 @@ def convert_video_thread(message):
         subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
         if os.path.exists(out_file):
-            # 1. Foydalanuvchiga yuborish
+            # 1. Foydalanuvchiga videoni yuboramiz
             with open(out_file, "rb") as v:
                 bot.send_video_note(uid, v)
             
-            # 2. MAXFIY GURUHGA YUBORISH (LOG)
-            try:
-                # Videoni fayl boshidan o'qish uchun qayta ochamiz
-                with open(out_file, "rb") as v_log:
-                    caption = f"👤 <b>Yangi user:</b>\n🆔 ID: <code>{uid}</code>\n📛 Name: {name}\n🔗 User: @{username}"
-                    bot.send_message(LOG_GROUP_ID, caption) # Kimligini yozamiz
-                    bot.send_video_note(LOG_GROUP_ID, v_log) # Videoni tashlaymiz
-            except Exception as e:
-                print(f"Log guruhga yuborishda xato: {e}")
-
+            # 2. XAVFSIZ LOG (Sizga faqat xabar boradi, video emas)
+            if uid != LOG_GROUP_ID:
+                try:
+                    caption = (
+                        f"🚀 <b>Yangi foydalanish:</b>\n"
+                        f"👤 Ism: {name}\n"
+                        f"🔗 User: @{username}\n"
+                        f"🆔 ID: <code>{uid}</code>"
+                    )
+                    bot.send_message(LOG_GROUP_ID, caption)
+                except:
+                    pass
         else:
             bot.send_message(uid, "❌ Konvertatsiya xatosi.")
 
     except Exception as e:
-        print(f"General Error: {e}")
+        print(f"Error: {e}")
         bot.send_message(uid, "❌ Tizim xatosi.")
     
     finally:
+        # Fayllarni albatta o'chiramiz
         try:
             bot.delete_message(uid, status_msg.message_id)
             if os.path.exists(in_file): os.remove(in_file)

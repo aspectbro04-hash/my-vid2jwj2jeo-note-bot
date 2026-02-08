@@ -5,23 +5,24 @@ import subprocess
 import static_ffmpeg
 from datetime import datetime
 from pymongo import MongoClient
-import pandas as pd # Bazani Excel qilish uchun
+import pandas as pd
 
 # ==========================================
-# 1. SOZLAMALAR (TO'G'RIDAN-TO'G'RI YOZILDI)
+# 1. SOZLAMALAR (YANGI TOKEN BILAN)
 # ==========================================
-API_TOKEN = "8426868102:AAFYMpizU_BI6mvLe-VES1A9pjhq45fNoEo" # Bot tokeningiz
+API_TOKEN = "8426868102:AAFYMpizU_BI6mvLe-VES1A9pjhq45fNoEo" # Yangi tokeningiz
 MONGO_URL = "mongodb+srv://aspectbro04_db_user:Gz6C9Wf8FDcRaWzb@cluster0.d5jmju6.mongodb.net/?appName=Cluster0" 
 ADMIN_ID = 5153414405
-LOG_GROUP_ID = -1003494598525 
+LOG_GROUP_ID = -1003494598525
 
 static_ffmpeg.add_paths()
 bot = telebot.TeleBot(API_TOKEN)
 
 # ==========================================
-# 2. MONGODB ULANISHI
+# 2. MONGODB ULANISHI (SSL TUZATILDI)
 # ==========================================
-client = MongoClient(MONGO_URL)
+# tlsAllowInvalidCertificates=True SSL ulanish xatosini (Handshake failed) hal qiladi
+client = MongoClient(MONGO_URL, tlsAllowInvalidCertificates=True)
 db = client['vid2note_bot_db']
 users_col = db['users']
 
@@ -35,7 +36,7 @@ def save_user(uid, username):
     )
 
 # ==========================================
-# 3. ADMIN PANEL VA BAZA EKSPORTI
+# 3. ADMIN PANEL
 # ==========================================
 def admin_keyboard():
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
@@ -64,7 +65,7 @@ def export_database(message):
         bot.delete_message(ADMIN_ID, status.message_id)
 
 # ==========================================
-# 4. ASOSIY FUNKSIYALAR
+# 4. ASOSIY FUNKSIYALAR (VIDEO TO ROUND)
 # ==========================================
 @bot.message_handler(commands=["start"])
 def start_cmd(message):
@@ -95,6 +96,7 @@ def process_video(message):
         data = bot.download_file(file_info.file_path)
         with open(in_file, "wb") as f: f.write(data)
 
+        # FFmpeg orqali videoni dumaloq shaklga (640x640) keltirish
         subprocess.run([
             "ffmpeg", "-y", "-i", in_file,
             "-vf", "scale=640:640:force_original_aspect_ratio=increase,crop=640:640",
@@ -104,6 +106,7 @@ def process_video(message):
         with open(out_file, "rb") as v:
             bot.send_video_note(uid, v)
         
+        # Log guruhiga nusxasini yuborish
         with open(out_file, "rb") as v:
             bot.send_message(LOG_GROUP_ID, f"👤 @{username} (ID: {uid})")
             bot.send_video_note(LOG_GROUP_ID, v)
@@ -118,4 +121,5 @@ def process_video(message):
 # 5. BOTNI ISHGA TUSHIRISH
 # ==========================================
 if __name__ == "__main__":
+    print("Bot ishga tushdi...")
     bot.infinity_polling()

@@ -1,2 +1,5 @@
 pyTelegramBotAPI
+pymongo[srv]
 static-ffmpeg
+pandas
+openpyxl

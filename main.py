@@ -10,7 +10,7 @@ import pandas as pd # Bazani Excel qilish uchun
 # ==========================================
 # 1. SOZLAMALAR (TO'G'RIDAN-TO'G'RI YOZILDI)
 # ==========================================
-API_TOKEN = "7917719602:AAH96v6T8D-Nsc7Sj-w0GvP7_j9_6y9Q8mQ" # Bot tokeningiz
+API_TOKEN = "8426868102:AAFYMpizU_BI6mvLe-VES1A9pjhq45fNoEo" # Bot tokeningiz
 MONGO_URL = "mongodb+srv://aspectbro04_db_user:Gz6C9Wf8FDcRaWzb@cluster0.d5jmju6.mongodb.net/?appName=Cluster0" 
 ADMIN_ID = 5153414405
 LOG_GROUP_ID = -1003494598525 

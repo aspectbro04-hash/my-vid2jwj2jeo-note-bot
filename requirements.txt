@@ -1,6 +1,4 @@
 pyTelegramBotAPI
 pymongo
-pandas
-openpyxl
 static-ffmpeg
 dnspython

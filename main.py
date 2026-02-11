@@ -8,18 +8,17 @@ from pymongo import MongoClient
 import csv
 
 # ==========================================
-# ⚙️ ASOSIY SOZLAMALAR (tegilmadi)
+# ⚙️ ASOSIY SOZLAMALAR (TEGILMADI)
 # ==========================================
 API_TOKEN = "8426868102:AAFYMpizU_BI6mvLe-VES1A9pjhq45fNoEo"
 MONGO_URL = "mongodb+srv://aspectbro04_db_user:Gz6C9Wf8FDcRaWzb@cluster0.d5jmju6.mongodb.net/?appName=Cluster0"
 ADMIN_ID = 5153414405
 
 static_ffmpeg.add_paths()
-
 bot = telebot.TeleBot(API_TOKEN, parse_mode="HTML", threaded=True)
 
 # ==========================================
-# 🗄 DATABASE
+# DATABASE
 # ==========================================
 client = MongoClient(MONGO_URL)
 db = client['vid2note_bot_db']
@@ -33,7 +32,7 @@ settings_col = db['settings']
 print("✅ DB ulandi")
 
 # ==========================================
-# 🔐 SAFE SEND (CRASH PROTECTION)
+# 🔐 SAFE FUNCTIONS (CRASH PROTECTION)
 # ==========================================
 def safe_send(uid, text, **kw):
     try:
@@ -47,7 +46,7 @@ def safe_doc(uid, file):
     except:
         pass
 
-def safe_video_note(uid, file):
+def safe_video(uid, file):
     try:
         bot.send_video_note(uid, file)
     except:
@@ -65,8 +64,12 @@ def save_user(uid, username):
         upsert=True
     )
 
+def get_log_group():
+    res = settings_col.find_one({"key": "log_group"})
+    return res["value"] if res else None
+
 # ==========================================
-# OBUNA TEKSHIRISH (tezlashtirilgan)
+# OBUNA TEKSHIRISH
 # ==========================================
 def check_subscription(uid):
 
@@ -101,7 +104,11 @@ def join_req(u):
 # ==========================================
 def admin_keyboard():
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add("📊 Statistika", "📥 Bazani yuklash")
+    kb.add("➕ Kanal qo'shish", "🗑 Kanal o'chirish")
+    kb.add("➕ [S] Kanal qo'shish", "🗑 [S] Kanal o'chirish")
+    kb.add("📋 Kanallar ro'yxati", "📊 Statistika")
+    kb.add("🔗 Log guruhini sozlash", "📥 Bazani yuklash")
+    kb.add("📢 Reklama yuborish")
     return kb
 
 def check_sub_keyboard():
@@ -156,7 +163,7 @@ def check_btn(c):
         pass
 
 # ==========================================
-# ADMIN
+# ADMIN FUNKSIYALAR
 # ==========================================
 @bot.message_handler(func=lambda m: m.from_user.id == ADMIN_ID and m.text == "📊 Statistika")
 def stats(m):
@@ -164,7 +171,6 @@ def stats(m):
 
 @bot.message_handler(func=lambda m: m.from_user.id == ADMIN_ID and m.text == "📥 Bazani yuklash")
 def export_users(m):
-
     filename = "users.csv"
 
     with open(filename, "w", newline="", encoding="utf-8") as f:
@@ -173,11 +179,11 @@ def export_users(m):
         for u in users_col.find():
             w.writerow([u.get("user_id"), u.get("username"), u.get("joined")])
 
-    safe_doc(ADMIN_ID, open(filename,"rb"))
+    safe_doc(ADMIN_ID, open(filename, "rb"))
     os.remove(filename)
 
 # ==========================================
-# VIDEO PROCESS (OPTIMIZED + LAGLESS)
+# VIDEO PROCESS (FAST + STABLE)
 # ==========================================
 @bot.message_handler(content_types=["video"])
 def process_video(m):
@@ -202,13 +208,13 @@ def process_video(m):
         subprocess.run([
             "ffmpeg","-y","-i",in_f,
             "-vf","scale=640:640:force_original_aspect_ratio=increase,crop=640:640",
-            "-preset","ultrafast",   # tezroq
+            "-preset","ultrafast",
             "-crf","30",
             out_f
         ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
         with open(out_f,"rb") as v:
-            safe_video_note(uid, v)
+            safe_video(uid, v)
 
     except:
         safe_send(uid, "❌ Xatolik yuz berdi")

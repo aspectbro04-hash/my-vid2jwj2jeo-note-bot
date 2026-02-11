@@ -204,4 +204,4 @@ def process_video(m):
 
 # ==========================================
 print("🚀 Bot ishga tushdi...")
-bot.infinity_polling(allowed_updates=["message","callback_query","chat_join_request"]
+bot.infinity_polling(allowed_updates=["message","callback_query","chat_join_request"])

@@ -45,7 +45,7 @@ def save_user(uid, username):
     )
 
 def check_subscription(uid):
-    # 1. Oddiy kanallarni tekshirish
+    # 1. Oddiy kanallar
     for ch in channels_col.find():
         try:
             st = bot.get_chat_member(ch["chat_id"], uid).status
@@ -54,7 +54,7 @@ def check_subscription(uid):
         except:
             return False
 
-    # 2. So'rovli kanallarni tekshirish (Faqat baza orqali)
+    # 2. So'rovli kanallar (Baza orqali)
     for sch in s_channels_col.find():
         req = requests_col.find_one({"user_id": uid, "chat_id": str(sch["chat_id"])})
         if not req:
@@ -62,11 +62,10 @@ def check_subscription(uid):
     return True
 
 # ==========================================
-# 🚀 JOIN REQUEST (FAQAT RO'YXATGA OLISH)
+# 🚀 JOIN REQUEST
 # ==========================================
 @bot.chat_join_request_handler()
 def join_req(u):
-    # Bot so'rovni qabul qilmaydi, faqat bazaga saqlaydi
     requests_col.update_one(
         {"user_id": u.from_user.id, "chat_id": str(u.chat.id)},
         {"$set": {"date": datetime.now()}},
@@ -86,12 +85,18 @@ def admin_keyboard():
     kb.add("➕ [S] Kanal qo'shish", "🗑 [S] Kanal o'chirish")
     kb.add("📋 Kanallar ro'yxati", "📊 Statistika")
     kb.add("📢 Reklama yuborish", "📥 Bazani yuklash")
-    kb.add("🔙 Bekor qilish")
+    kb.add("🔥 Hammasini tozalash", "🔙 Bekor qilish")
     return kb
 
 def cancel_keyboard():
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
     kb.add("🔙 Bekor qilish")
+    return kb
+
+def confirm_clear_keyboard():
+    kb = types.InlineKeyboardMarkup()
+    kb.add(types.InlineKeyboardButton("✅ HA, Hammasini o'chir!", callback_data="confirm_clear_all"))
+    kb.add(types.InlineKeyboardButton("❌ YO'Q, Bekor qil", callback_data="cancel_clear"))
     return kb
 
 def check_sub_keyboard():
@@ -118,20 +123,31 @@ def start_cmd(m):
     save_user(uid, m.from_user.username)
     if uid == ADMIN_ID:
         admin_state[uid] = None
-        bot.send_message(uid, "👑 Admin Panel", reply_markup=admin_keyboard())
+        bot.send_message(uid, "👑 <b>Admin Panel</b>\n\nBarcha kanallarni tozalash uchun quyidagi tugmani ishlating.", reply_markup=admin_keyboard())
     else:
         if check_subscription(uid):
             bot.send_message(uid, "🎥 Video yuboring, men uni Video Note qilib beraman!")
         else:
             bot.send_message(uid, "🚫 Botdan foydalanish uchun kanallarga a'zo bo'ling yoki so'rov yuboring:", reply_markup=check_sub_keyboard())
 
-@bot.callback_query_handler(func=lambda c: c.data == "check_sub")
-def check_btn(c):
-    if check_subscription(c.from_user.id):
+@bot.callback_query_handler(func=lambda c: True)
+def callback_handler(c):
+    if c.data == "check_sub":
+        if check_subscription(c.from_user.id):
+            bot.delete_message(c.message.chat.id, c.message.id)
+            bot.send_message(c.message.chat.id, "✅ Rahmat! Endi video yuborishingiz mumkin.")
+        else:
+            bot.answer_callback_query(c.id, "❌ Hali hamma kanalga a'zo emassiz yoki so'rov yubormagansiz!", show_alert=True)
+    
+    elif c.data == "confirm_clear_all":
+        if c.from_user.id == ADMIN_ID:
+            channels_col.delete_many({})
+            s_channels_col.delete_many({})
+            bot.edit_message_text("🔥 Barcha kanallar bazadan o'chirildi!", c.message.chat.id, c.message.id)
+    
+    elif c.data == "cancel_clear":
         bot.delete_message(c.message.chat.id, c.message.id)
-        bot.send_message(c.message.chat.id, "✅ Rahmat! Endi video yuborishingiz mumkin.")
-    else:
-        bot.answer_callback_query(c.id, "❌ Hali hamma kanalga a'zo emassiz yoki so'rov yubormagansiz!", show_alert=True)
+        bot.send_message(c.message.chat.id, "Bekor qilindi.")
 
 # ==========================================
 # 👑 ADMIN PANEL FUNKSIYALARI
@@ -140,6 +156,11 @@ def check_btn(c):
 def cancel(m):
     admin_state[m.from_user.id] = None
     bot.send_message(m.chat.id, "Bekor qilindi.", reply_markup=admin_keyboard())
+
+@bot.message_handler(func=lambda m: m.from_user.id == ADMIN_ID and m.text == "🔥 Hammasini tozalash")
+def clear_all_cmd(m):
+    bot.send_message(m.chat.id, "⚠️ <b>DIQQAT!</b>\n\nBarcha oddiy va [S] kanallarni bazadan butunlay o'chirib tashlamoqchimisiz?", 
+                     reply_markup=confirm_clear_keyboard(), parse_mode="HTML")
 
 @bot.message_handler(func=lambda m: m.from_user.id == ADMIN_ID and m.text == "📊 Statistika")
 def stats(m):
@@ -169,22 +190,24 @@ def admin_actions(m):
 def handle_admin_input(m):
     uid = m.from_user.id
     state = admin_state[uid]
+    text = m.text.strip()
     
     try:
         if state == "add_ch":
-            cid = int(m.text)
+            cid = int(text)
             channels_col.update_one({"chat_id": cid}, {"$set": {"added": True}}, upsert=True)
             bot.send_message(m.chat.id, "✅ Kanal qo'shildi")
         elif state == "add_sch":
-            cid = int(m.text)
+            cid = int(text)
             s_channels_col.update_one({"chat_id": cid}, {"$set": {"added": True}}, upsert=True)
             bot.send_message(m.chat.id, "✅ [S] Kanal qo'shildi")
         elif state == "del_ch":
-            channels_col.delete_one({"chat_id": int(m.text)})
-            bot.send_message(m.chat.id, "🗑 Kanal o'chirildi")
+            # Ham Integer ham String variantini o'chirish
+            res = channels_col.delete_many({"chat_id": {"$in": [int(text), text]}})
+            bot.send_message(m.chat.id, f"🗑 {res.deleted_count} ta kanal o'chirildi")
         elif state == "del_sch":
-            s_channels_col.delete_one({"chat_id": int(m.text)})
-            bot.send_message(m.chat.id, "🗑 [S] Kanal o'chirildi")
+            res = s_channels_col.delete_many({"chat_id": {"$in": [int(text), text]}})
+            bot.send_message(m.chat.id, f"🗑 {res.deleted_count} ta [S] kanal o'chirildi")
         elif state == "reklama":
             def send_rec():
                 for u in users_col.find():
@@ -193,8 +216,8 @@ def handle_admin_input(m):
                 bot.send_message(m.chat.id, "🏁 Reklama tugadi")
             threading.Thread(target=send_rec).start()
             bot.send_message(m.chat.id, "🚀 Reklama boshlandi")
-    except:
-        bot.send_message(m.chat.id, "❌ Xato! ID raqam ekanligiga e'tibor bering.")
+    except Exception as e:
+        bot.send_message(m.chat.id, f"❌ Xatolik: ID faqat raqam bo'lishi kerak.")
     
     admin_state[uid] = None
     bot.send_message(m.chat.id, "Admin Panel", reply_markup=admin_keyboard())

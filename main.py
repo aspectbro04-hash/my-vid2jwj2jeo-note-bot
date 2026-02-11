@@ -6,10 +6,9 @@ import static_ffmpeg
 from datetime import datetime
 from pymongo import MongoClient
 import csv
-import time
 
 # ==========================================
-# ⚙️ ASOSIY SOZLAMALAR
+# ⚙️ ASOSIY SOZLAMALAR (tegilmadi)
 # ==========================================
 API_TOKEN = "8426868102:AAFYMpizU_BI6mvLe-VES1A9pjhq45fNoEo"
 MONGO_URL = "mongodb+srv://aspectbro04_db_user:Gz6C9Wf8FDcRaWzb@cluster0.d5jmju6.mongodb.net/?appName=Cluster0"
@@ -17,7 +16,7 @@ ADMIN_ID = 5153414405
 
 static_ffmpeg.add_paths()
 
-bot = telebot.TeleBot(API_TOKEN, parse_mode="HTML")
+bot = telebot.TeleBot(API_TOKEN, parse_mode="HTML", threaded=True)
 
 # ==========================================
 # 🗄 DATABASE
@@ -34,6 +33,27 @@ settings_col = db['settings']
 print("✅ DB ulandi")
 
 # ==========================================
+# 🔐 SAFE SEND (CRASH PROTECTION)
+# ==========================================
+def safe_send(uid, text, **kw):
+    try:
+        bot.send_message(uid, text, **kw)
+    except:
+        pass
+
+def safe_doc(uid, file):
+    try:
+        bot.send_document(uid, file)
+    except:
+        pass
+
+def safe_video_note(uid, file):
+    try:
+        bot.send_video_note(uid, file)
+    except:
+        pass
+
+# ==========================================
 # YORDAMCHI
 # ==========================================
 def save_user(uid, username):
@@ -45,30 +65,24 @@ def save_user(uid, username):
         upsert=True
     )
 
-def get_log_group():
-    res = settings_col.find_one({"key": "log_group"})
-    return res["value"] if res else None
-
-
 # ==========================================
-# OBUNA TEKSHIRISH
+# OBUNA TEKSHIRISH (tezlashtirilgan)
 # ==========================================
 def check_subscription(uid):
 
-    for ch in channels_col.find():
+    for ch in channels_col.find({}, {"chat_id": 1}):
         try:
             st = bot.get_chat_member(ch["chat_id"], uid).status
-            if st not in ["member","administrator","creator"]:
+            if st not in ("member","administrator","creator"):
                 return False
         except:
             return False
 
-    for sch in s_channels_col.find():
+    for sch in s_channels_col.find({}, {"chat_id": 1}):
         if not requests_col.find_one({"user_id": uid, "chat_id": str(sch["chat_id"])}):
             return False
 
     return True
-
 
 # ==========================================
 # JOIN REQUEST
@@ -80,40 +94,37 @@ def join_req(u):
         {"$set": {"date": datetime.now()}},
         upsert=True
     )
-    try:
-        bot.send_message(u.from_user.id, "✅ So'rov qabul qilindi!")
-    except:
-        pass
-
+    safe_send(u.from_user.id, "✅ So'rov qabul qilindi!")
 
 # ==========================================
 # KEYBOARDS
 # ==========================================
 def admin_keyboard():
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add("➕ Kanal qo'shish", "🗑 Kanal o'chirish")
-    kb.add("➕ [S] Kanal qo'shish", "🗑 [S] Kanal o'chirish")
-    kb.add("📋 Kanallar ro'yxati", "📊 Statistika")
-    kb.add("🔗 Log guruhini sozlash", "📥 Bazani yuklash")
-    kb.add("📢 Reklama yuborish")
+    kb.add("📊 Statistika", "📥 Bazani yuklash")
     return kb
 
 def check_sub_keyboard():
     kb = types.InlineKeyboardMarkup()
 
-    for ch in channels_col.find():
-        chat = bot.get_chat(ch["chat_id"])
-        link = chat.invite_link or f"https://t.me/{chat.username}"
-        kb.add(types.InlineKeyboardButton("➕ Obuna", url=link))
+    for ch in channels_col.find({}, {"chat_id": 1}):
+        try:
+            chat = bot.get_chat(ch["chat_id"])
+            link = chat.invite_link or f"https://t.me/{chat.username}"
+            kb.add(types.InlineKeyboardButton("➕ Obuna", url=link))
+        except:
+            pass
 
-    for sch in s_channels_col.find():
-        chat = bot.get_chat(sch["chat_id"])
-        link = chat.invite_link or f"https://t.me/{chat.username}"
-        kb.add(types.InlineKeyboardButton("📩 So'rov", url=link))
+    for sch in s_channels_col.find({}, {"chat_id": 1}):
+        try:
+            chat = bot.get_chat(sch["chat_id"])
+            link = chat.invite_link or f"https://t.me/{chat.username}"
+            kb.add(types.InlineKeyboardButton("📩 So'rov", url=link))
+        except:
+            pass
 
     kb.add(types.InlineKeyboardButton("✅ Tekshirish", callback_data="check_sub"))
     return kb
-
 
 # ==========================================
 # START
@@ -124,29 +135,32 @@ def start_cmd(m):
     save_user(uid, m.from_user.username)
 
     if uid == ADMIN_ID:
-        bot.send_message(uid, "👑 Admin Panel", reply_markup=admin_keyboard())
+        safe_send(uid, "👑 Admin Panel", reply_markup=admin_keyboard())
     else:
         if check_subscription(uid):
-            bot.send_message(uid, "🎥 Video yuboring")
+            safe_send(uid, "🎥 Video yuboring")
         else:
-            bot.send_message(uid, "🚫 Kanallarga qo'shiling", reply_markup=check_sub_keyboard())
-
-
-@bot.callback_query_handler(func=lambda c: c.data == "check_sub")
-def check_btn(c):
-    if check_subscription(c.from_user.id):
-        bot.edit_message_text("✅ Rahmat!", c.message.chat.id, c.message.id)
-    else:
-        bot.answer_callback_query(c.id, "❌ Obuna bo'lmagansiz", show_alert=True)
-
+            safe_send(uid, "🚫 Kanallarga qo'shiling", reply_markup=check_sub_keyboard())
 
 # ==========================================
-# ADMIN FUNKSIYALAR
+# CALLBACK
+# ==========================================
+@bot.callback_query_handler(func=lambda c: c.data == "check_sub")
+def check_btn(c):
+    try:
+        if check_subscription(c.from_user.id):
+            bot.edit_message_text("✅ Rahmat!", c.message.chat.id, c.message.id)
+        else:
+            bot.answer_callback_query(c.id, "❌ Obuna bo'lmagansiz", show_alert=True)
+    except:
+        pass
+
+# ==========================================
+# ADMIN
 # ==========================================
 @bot.message_handler(func=lambda m: m.from_user.id == ADMIN_ID and m.text == "📊 Statistika")
 def stats(m):
-    bot.send_message(ADMIN_ID, f"👥 Users: {users_col.count_documents({})}")
-
+    safe_send(ADMIN_ID, f"👥 Users: {users_col.count_documents({})}")
 
 @bot.message_handler(func=lambda m: m.from_user.id == ADMIN_ID and m.text == "📥 Bazani yuklash")
 def export_users(m):
@@ -159,12 +173,11 @@ def export_users(m):
         for u in users_col.find():
             w.writerow([u.get("user_id"), u.get("username"), u.get("joined")])
 
-    bot.send_document(ADMIN_ID, open(filename,"rb"))
+    safe_doc(ADMIN_ID, open(filename,"rb"))
     os.remove(filename)
 
-
 # ==========================================
-# VIDEO PROCESS (tez)
+# VIDEO PROCESS (OPTIMIZED + LAGLESS)
 # ==========================================
 @bot.message_handler(content_types=["video"])
 def process_video(m):
@@ -172,7 +185,7 @@ def process_video(m):
     uid = m.from_user.id
 
     if not check_subscription(uid):
-        return bot.send_message(uid, "🚫 Obuna bo'ling", reply_markup=check_sub_keyboard())
+        return safe_send(uid, "🚫 Obuna bo'ling", reply_markup=check_sub_keyboard())
 
     in_f = f"{uid}.mp4"
     out_f = f"{uid}_o.mp4"
@@ -189,19 +202,26 @@ def process_video(m):
         subprocess.run([
             "ffmpeg","-y","-i",in_f,
             "-vf","scale=640:640:force_original_aspect_ratio=increase,crop=640:640",
-            "-preset","veryfast","-crf","28",
+            "-preset","ultrafast",   # tezroq
+            "-crf","30",
             out_f
         ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
         with open(out_f,"rb") as v:
-            bot.send_video_note(uid,v)
+            safe_video_note(uid, v)
+
+    except:
+        safe_send(uid, "❌ Xatolik yuz berdi")
 
     finally:
-        bot.delete_message(uid, msg.message_id)
+        try:
+            bot.delete_message(uid, msg.message_id)
+        except:
+            pass
+
         if os.path.exists(in_f): os.remove(in_f)
         if os.path.exists(out_f): os.remove(out_f)
 
-
 # ==========================================
 print("🚀 Bot ishga tushdi...")
-bot.infinity_polling(allowed_updates=["message","callback_query","chat_join_request"])
+bot.infinity_polling(skip_pending=True, timeout=60)

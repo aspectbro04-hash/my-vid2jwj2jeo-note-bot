@@ -11,8 +11,8 @@ import time
 # ==========================================
 # ⚙️ ASOSIY SOZLAMALAR
 # ==========================================
-API_TOKEN = "TOKENINGIZ"
-MONGO_URL = "MONGO_URLINGIZ"
+API_TOKEN = "8426868102:AAFYMpizU_BI6mvLe-VES1A9pjhq45fNoEo"
+MONGO_URL = "mongodb+srv://aspectbro04_db_user:Gz6C9Wf8FDcRaWzb@cluster0.d5jmju6.mongodb.net/?appName=Cluster0"
 ADMIN_ID = 5153414405
 
 static_ffmpeg.add_paths()

@@ -27,7 +27,6 @@ db = client['vid2note_bot_db']
 users_col = db['users']
 channels_col = db['channels']
 s_channels_col = db['s_channels']
-requests_col = db['requests']
 settings_col = db['settings']
 
 admin_state = {}
@@ -45,45 +44,16 @@ def save_user(uid, username):
     )
 
 def check_subscription(uid):
-    # 1. Oddiy kanallarni tekshirish (Bot admin bo'lishi shart)
+    # Bot faqat 'channels' bazasidagi majburiy kanallarni tekshiradi
     for ch in channels_col.find():
         try:
             chat_id = int(ch["chat_id"])
             st = bot.get_chat_member(chat_id, uid).status
             if st not in ["member", "administrator", "creator"]:
                 return False
-        except Exception as e:
-            print(f"Oddiy kanal tekshirishda xato ({ch['chat_id']}): {e}")
+        except:
             return False
-
-    # 2. So'rovli kanallarni tekshirish (Bazadagi so'rovlarni tekshirish)
-    # MUHIM: Bu yerda ham int, ham str formatda tekshiramiz
-    for sch in s_channels_col.find():
-        target_chat_id = str(sch["chat_id"])
-        req = requests_col.find_one({
-            "user_id": uid, 
-            "chat_id": {"$in": [target_chat_id, int(target_chat_id) if target_chat_id.replace('-','').isdigit() else target_chat_id]}
-        })
-        if not req:
-            return False
-            
     return True
-
-# ==========================================
-# 🚀 JOIN REQUEST (BOT ADMIN BO'LISHI SHART)
-# ==========================================
-@bot.chat_join_request_handler()
-def join_req(u):
-    # Foydalanuvchi so'rov yuborganini bazaga saqlaymiz
-    requests_col.update_one(
-        {"user_id": u.from_user.id, "chat_id": str(u.chat.id)},
-        {"$set": {"date": datetime.now(), "status": "pending"}},
-        upsert=True
-    )
-    try:
-        bot.send_message(u.from_user.id, "✅ Kanallarga so'rovingiz qabul qilindi! Endi botga qaytib 'Tekshirish' tugmasini bosing.")
-    except:
-        pass
 
 # ==========================================
 # ⌨️ KEYBOARDS
@@ -110,19 +80,22 @@ def confirm_clear_keyboard():
 
 def check_sub_keyboard():
     kb = types.InlineKeyboardMarkup(row_width=1)
-    # Oddiy kanallar
+    # 1. Majburiy (Oddiy) kanallar
     for ch in channels_col.find():
         try:
             chat = bot.get_chat(ch["chat_id"])
             link = chat.invite_link or f"https://t.me/{chat.username}"
-            kb.add(types.InlineKeyboardButton(f"➕ Obuna: {chat.title}", url=link))
+            kb.add(types.InlineKeyboardButton(f"➕ Obuna bo'lish", url=link))
         except: pass
-    # So'rovli kanallar
+    
+    # 2. [S] Kanallar (Faqat havola sifatida, tekshirilmaydi)
     for sch in s_channels_col.find():
         try:
-            chat = bot.get_chat(sch["chat_id"])
-            kb.add(types.InlineKeyboardButton(f"📩 So'rov: {chat.title}", url=chat.invite_link))
+            # Agar bazada invite_link saqlangan bo'lsa o'shani, bo'lmasa get_chat orqali oladi
+            link = sch.get("link")
+            kb.add(types.InlineKeyboardButton(f"📩 So'rov yuborish", url=link))
         except: pass
+        
     kb.add(types.InlineKeyboardButton("✅ Tekshirish", callback_data="check_sub"))
     return kb
 
@@ -140,7 +113,7 @@ def start_cmd(m):
         if check_subscription(uid):
             bot.send_message(uid, "🎥 Video yuboring, men uni Video Note qilib beraman!")
         else:
-            bot.send_message(uid, "🚫 Botdan foydalanish uchun kanallarga a'zo bo'ling yoki so'rov yuboring:", reply_markup=check_sub_keyboard())
+            bot.send_message(uid, "🚫 Botdan foydalanish uchun kanallarga a'zo bo'ling:", reply_markup=check_sub_keyboard())
 
 @bot.callback_query_handler(func=lambda c: True)
 def callback_handler(c):
@@ -149,7 +122,7 @@ def callback_handler(c):
             bot.delete_message(c.message.chat.id, c.message.id)
             bot.send_message(c.message.chat.id, "✅ Rahmat! Endi video yuborishingiz mumkin.")
         else:
-            bot.answer_callback_query(c.id, "❌ Hali hamma kanalga a'zo emassiz yoki so'rov yubormagansiz!", show_alert=True)
+            bot.answer_callback_query(c.id, "❌ Hali hamma kanalga a'zo emassiz!", show_alert=True)
     
     elif c.data == "confirm_clear_all":
         if c.from_user.id == ADMIN_ID:
@@ -171,7 +144,7 @@ def cancel(m):
 
 @bot.message_handler(func=lambda m: m.from_user.id == ADMIN_ID and m.text == "🔥 Hammasini tozalash")
 def clear_all_cmd(m):
-    bot.send_message(m.chat.id, "⚠️ <b>DIQQAT!</b>\n\nBarcha oddiy va [S] kanallarni bazadan butunlay o'chirib tashlamoqchimisiz?", 
+    bot.send_message(m.chat.id, "⚠️ <b>DIQQAT!</b>\n\nBarcha kanallarni bazadan butunlay o'chirib tashlamoqchimisiz?", 
                      reply_markup=confirm_clear_keyboard(), parse_mode="HTML")
 
 @bot.message_handler(func=lambda m: m.from_user.id == ADMIN_ID and m.text == "📊 Statistika")
@@ -181,22 +154,31 @@ def stats(m):
 
 @bot.message_handler(func=lambda m: m.from_user.id == ADMIN_ID and m.text == "📋 Kanallar ro'yxati")
 def list_ch(m):
-    text = "<b>Oddiy kanallar:</b>\n"
+    text = "<b>Majburiy kanallar (Tekshiriladi):</b>\n"
     for c in channels_col.find(): text += f"<code>{c['chat_id']}</code>\n"
-    text += "\n<b>[S] Kanallar:</b>\n"
-    for c in s_channels_col.find(): text += f"<code>{c['chat_id']}</code>\n"
+    text += "\n<b>[S] Kanallar (Faqat reklama):</b>\n"
+    for c in s_channels_col.find(): text += f"🔗 {c['link']}\n"
     bot.send_message(m.chat.id, text or "Ro'yxat bo'sh")
 
 @bot.message_handler(func=lambda m: m.from_user.id == ADMIN_ID and m.text in ["➕ Kanal qo'shish", "➕ [S] Kanal qo'shish", "🗑 Kanal o'chirish", "🗑 [S] Kanal o'chirish", "📢 Reklama yuborish"])
 def admin_actions(m):
     txt = m.text
     uid = m.from_user.id
-    if txt == "➕ Kanal qo'shish": admin_state[uid] = "add_ch"
-    elif txt == "➕ [S] Kanal qo'shish": admin_state[uid] = "add_sch"
-    elif txt == "🗑 Kanal o'chirish": admin_state[uid] = "del_ch"
-    elif txt == "🗑 [S] Kanal o'chirish": admin_state[uid] = "del_sch"
-    elif txt == "📢 Reklama yuborish": admin_state[uid] = "reklama"
-    bot.send_message(m.chat.id, "ID raqamni yuboring:", reply_markup=cancel_keyboard())
+    if txt == "➕ Kanal qo'shish": 
+        admin_state[uid] = "add_ch"
+        bot.send_message(m.chat.id, "Kanal ID raqamini yuboring:", reply_markup=cancel_keyboard())
+    elif txt == "➕ [S] Kanal qo'shish": 
+        admin_state[uid] = "add_sch"
+        bot.send_message(m.chat.id, "Kanal havolasini (linkini) yuboring:", reply_markup=cancel_keyboard())
+    elif txt == "🗑 Kanal o'chirish": 
+        admin_state[uid] = "del_ch"
+        bot.send_message(m.chat.id, "O'chiriladigan kanal ID sini yuboring:", reply_markup=cancel_keyboard())
+    elif txt == "🗑 [S] Kanal o'chirish": 
+        admin_state[uid] = "del_sch"
+        bot.send_message(m.chat.id, "O'chiriladigan kanal linkini yuboring:", reply_markup=cancel_keyboard())
+    elif txt == "📢 Reklama yuborish": 
+        admin_state[uid] = "reklama"
+        bot.send_message(m.chat.id, "Reklama xabarini yuboring:", reply_markup=cancel_keyboard())
 
 @bot.message_handler(func=lambda m: m.from_user.id == ADMIN_ID and admin_state.get(m.from_user.id))
 def handle_admin_input(m):
@@ -206,19 +188,17 @@ def handle_admin_input(m):
     
     try:
         if state == "add_ch":
-            cid = int(text)
-            channels_col.update_one({"chat_id": cid}, {"$set": {"added": True}}, upsert=True)
-            bot.send_message(m.chat.id, "✅ Kanal qo'shildi")
+            channels_col.update_one({"chat_id": int(text)}, {"$set": {"added": True}}, upsert=True)
+            bot.send_message(m.chat.id, "✅ Majburiy kanal qo'shildi")
         elif state == "add_sch":
-            cid = int(text)
-            s_channels_col.update_one({"chat_id": cid}, {"$set": {"added": True}}, upsert=True)
-            bot.send_message(m.chat.id, "✅ [S] Kanal qo'shildi")
+            s_channels_col.update_one({"link": text}, {"$set": {"added": True}}, upsert=True)
+            bot.send_message(m.chat.id, "✅ [S] Kanal linki qo'shildi")
         elif state == "del_ch":
-            res = channels_col.delete_many({"chat_id": {"$in": [int(text), text]}})
-            bot.send_message(m.chat.id, f"🗑 {res.deleted_count} ta kanal o'chirildi")
+            channels_col.delete_many({"chat_id": {"$in": [int(text), text]}})
+            bot.send_message(m.chat.id, "🗑 Kanal o'chirildi")
         elif state == "del_sch":
-            res = s_channels_col.delete_many({"chat_id": {"$in": [int(text), text]}})
-            bot.send_message(m.chat.id, f"🗑 {res.deleted_count} ta [S] kanal o'chirildi")
+            s_channels_col.delete_one({"link": text})
+            bot.send_message(m.chat.id, "🗑 [S] Kanal linki o'chirildi")
         elif state == "reklama":
             def send_rec():
                 for u in users_col.find():
@@ -227,8 +207,8 @@ def handle_admin_input(m):
                 bot.send_message(m.chat.id, "🏁 Reklama tugadi")
             threading.Thread(target=send_rec).start()
             bot.send_message(m.chat.id, "🚀 Reklama boshlandi")
-    except Exception as e:
-        bot.send_message(m.chat.id, f"❌ Xato! ID raqam ekanligiga e'tibor bering.")
+    except:
+        bot.send_message(m.chat.id, "❌ Xatolik yuz berdi. Ma'lumotni to'g'ri yuborganingizga ishonch hosil qiling.")
     
     admin_state[uid] = None
     bot.send_message(m.chat.id, "Admin Panel", reply_markup=admin_keyboard())
@@ -257,11 +237,11 @@ def process_video(m):
 
         with open(out_f, "rb") as v: bot.send_video_note(uid, v)
         bot.delete_message(uid, msg.message_id)
-    except Exception as e:
+    except:
         bot.send_message(uid, "❌ Xatolik yuz berdi")
     finally:
         for f in [in_f, out_f]:
             if os.path.exists(f): os.remove(f)
 
 print("🚀 Bot ishga tushdi...")
-bot.infinity_polling(allowed_updates=["message", "callback_query", "chat_join_request"])
+bot.infinity_polling(allowed_updates=["message", "callback_query"])
